@@ -48,74 +48,122 @@ typedef struct
 // Create a shader object, load the shader source, and
 // compile the shader.
 //
-GLuint LoadShader ( GLenum type, const char *shaderSrc )
+GLuint LoadShader(GLenum type, const char *shaderSrc)
 {
    GLuint shader;
    GLint compiled;
 
    // Create the shader object
-   shader = glCreateShader ( type );
+   shader = glCreateShader(type);
 
-   if ( shader == 0 )
+   if (shader == 0)
    {
       return 0;
    }
 
    // Load the shader source
-   glShaderSource ( shader, 1, &shaderSrc, NULL );
+   glShaderSource(shader, 1, &shaderSrc, NULL);
 
    // Compile the shader
-   glCompileShader ( shader );
+   glCompileShader(shader);
 
    // Check the compile status
-   glGetShaderiv ( shader, GL_COMPILE_STATUS, &compiled );
+   glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
 
-   if ( !compiled )
+   if (!compiled)
    {
       GLint infoLen = 0;
 
-      glGetShaderiv ( shader, GL_INFO_LOG_LENGTH, &infoLen );
+      glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &infoLen);
 
-      if ( infoLen > 1 )
+      if (infoLen > 1)
       {
-         char *infoLog = malloc ( sizeof ( char ) * infoLen );
+         char *infoLog = malloc(sizeof(char) * infoLen);
 
-         glGetShaderInfoLog ( shader, infoLen, NULL, infoLog );
-         esLogMessage ( "Error compiling shader:\n%s\n", infoLog );
+         glGetShaderInfoLog(shader, infoLen, NULL, infoLog);
+         esLogMessage("Error compiling shader:\n%s\n", infoLog);
 
-         free ( infoLog );
+         free(infoLog);
       }
 
-      glDeleteShader ( shader );
+      glDeleteShader(shader);
       return 0;
    }
 
    return shader;
-
 }
 
 ///
 // Initialize the shader and program object
 //
-int Init ( ESContext *esContext )
+int Init(ESContext *esContext)
 {
    UserData *userData = esContext->userData;
-   char vShaderStr[] =
-      "#version 300 es                          \n"
-      "layout(location = 0) in vec4 vPosition;  \n"
-      "void main()                              \n"
-      "{                                        \n"
-      "   gl_Position = vPosition;              \n"
-      "}                                        \n";
 
-   char fShaderStr[] =
-      "#version 300 es                              \n"
-      "precision mediump float;                     \n"
-      "out vec4 fragColor;                          \n"
-      "void main()                                  \n"
-      "{                                            \n"
-      "   fragColor = vec4 ( 1.0, 0.0, 0.0, 1.0 );  \n"
-      "}                                            \n";
+   char vShaderStr[] = R"(
+      #version 300 es
+      layout(location = 0) in vec4 vPosition;
+      void main()
+      {
+         gl_Position = vPosition;
+      }
+   )";
+
+   char *fShaderStr = R"(
+      #version 300 es
+      precision mediump float;
+      out vec4 fragColor;
+
+      float DigitBin( const int x )
+      {
+         return x==0?480599.0:x==1?139810.0:x==2?476951.0:x==3?476999.0:x==4?350020.0:x==5?464711.0:x==6?464727.0:x==7?476228.0:x==8?481111.0:x==9?481095.0:0.0;
+      }
+
+      float PrintValue( vec2 vStringCoords, float fValue, float fMaxDigits, float fDecimalPlaces )
+      {
+         if ((vStringCoords.y < 0.0) || (vStringCoords.y >= 1.0)) return 0.0;
+
+         bool bNeg = ( fValue < 0.0 );
+      	fValue = abs(fValue);
+
+      	float fLog10Value = log2(abs(fValue)) / log2(10.0);
+      	float fBiggestIndex = max(floor(fLog10Value), 0.0);
+      	float fDigitIndex = fMaxDigits - floor(vStringCoords.x);
+      	float fCharBin = 0.0;
+      	if(fDigitIndex > (-fDecimalPlaces - 1.01)) {
+      		if(fDigitIndex > fBiggestIndex) {
+      			if((bNeg) && (fDigitIndex < (fBiggestIndex+1.5))) fCharBin = 1792.0;
+      		} else {
+      			if(fDigitIndex == -1.0) {
+      				if(fDecimalPlaces > 0.0) fCharBin = 2.0;
+      			} else {
+                      float fReducedRangeValue = fValue;
+                      if(fDigitIndex < 0.0) { fReducedRangeValue = fract( fValue ); fDigitIndex += 1.0; }
+      				float fDigitValue = (abs(fReducedRangeValue / (pow(10.0, fDigitIndex))));
+                      fCharBin = DigitBin(int(floor(mod(fDigitValue, 10.0))));
+      			}
+              }
+      	}
+          return floor(mod((fCharBin / pow(2.0, floor(fract(vStringCoords.x) * 4.0) + (floor(vStringCoords.y * 5.0) * 4.0))), 2.0));
+      }
+
+      void main()
+      {
+         vec3 vColour = vec3(0);
+         vec2 vFontSize = vec2(8.0, 15.0);
+         float fDigits;
+         float fDecimalPlaces;
+
+         // Print Shader Time
+      	vec2 vPixelCoord1 = vec2(96.0, 5.0);
+      	float fValue1 = 222.0;
+      	fDigits = 6.0;
+      	float fIsDigit1 = PrintValue( (gl_FragCoord.xy - vPixelCoord1) / vFontSize, fValue1, fDigits, fDecimalPlaces);
+      	vColour = mix( vColour, vec3(0.0, 1.0, 1.0), fIsDigit1);
+
+         fragColor = vec4(vColour, 1);
+      }
+   )";
 
    GLuint vertexShader;
    GLuint fragmentShader;
@@ -123,100 +171,112 @@ int Init ( ESContext *esContext )
    GLint linked;
 
    // Load the vertex/fragment shaders
-   vertexShader = LoadShader ( GL_VERTEX_SHADER, vShaderStr );
-   fragmentShader = LoadShader ( GL_FRAGMENT_SHADER, fShaderStr );
+   vertexShader = LoadShader(GL_VERTEX_SHADER, vShaderStr);
+   fragmentShader = LoadShader(GL_FRAGMENT_SHADER, fShaderStr);
 
    // Create the program object
-   programObject = glCreateProgram ( );
+   programObject = glCreateProgram();
 
-   if ( programObject == 0 )
+   if (programObject == 0)
    {
       return 0;
    }
 
-   glAttachShader ( programObject, vertexShader );
-   glAttachShader ( programObject, fragmentShader );
+   glAttachShader(programObject, vertexShader);
+   glAttachShader(programObject, fragmentShader);
 
    // Link the program
-   glLinkProgram ( programObject );
+   glLinkProgram(programObject);
 
    // Check the link status
-   glGetProgramiv ( programObject, GL_LINK_STATUS, &linked );
+   glGetProgramiv(programObject, GL_LINK_STATUS, &linked);
 
-   if ( !linked )
+   if (!linked)
    {
       GLint infoLen = 0;
 
-      glGetProgramiv ( programObject, GL_INFO_LOG_LENGTH, &infoLen );
+      glGetProgramiv(programObject, GL_INFO_LOG_LENGTH, &infoLen);
 
-      if ( infoLen > 1 )
+      if (infoLen > 1)
       {
-         char *infoLog = malloc ( sizeof ( char ) * infoLen );
+         char *infoLog = malloc(sizeof(char) * infoLen);
 
-         glGetProgramInfoLog ( programObject, infoLen, NULL, infoLog );
-         esLogMessage ( "Error linking program:\n%s\n", infoLog );
+         glGetProgramInfoLog(programObject, infoLen, NULL, infoLog);
+         esLogMessage("Error linking program:\n%s\n", infoLog);
 
-         free ( infoLog );
+         free(infoLog);
       }
 
-      glDeleteProgram ( programObject );
+      glDeleteProgram(programObject);
       return FALSE;
    }
 
    // Store the program object
    userData->programObject = programObject;
 
-   glClearColor ( 1.0f, 1.0f, 1.0f, 0.0f );
+   glClearColor(1.0f, 1.0f, 1.0f, 0.0f);
    return TRUE;
 }
 
 ///
 // Draw a triangle using the shader pair created in Init()
 //
-void Draw ( ESContext *esContext )
+void Draw(ESContext *esContext)
 {
    UserData *userData = esContext->userData;
-   GLfloat vVertices[] = {  0.0f,  0.5f, 0.0f,
-                            -0.5f, -0.5f, 0.0f,
-                            0.5f, -0.5f, 0.0f
-                         };
+   // GLfloat vVertices[] = {0.0f, 0.5f, 0.0f,
+   //                        -0.5f, -0.5f, 0.0f,
+   //                        0.5f, -0.5f, 0.0f};
+   // GLfloat vVertices[] = {0.0f, 1.0f, 1.0f,
+   //                        -1.0f, -1.0f, 1.0f,
+   //                        1.0f, -1.0f, 1.0f};
+
+   GLfloat vVertices[] = {
+       -1.0f, 1.0f, 0.0f,  // Position 0
+       -1.0f, -1.0f, 0.0f, // Position 1
+       1.0f, -1.0f, 0.0f,  // Position 2
+       1.0f, 1.0f, 0.0f,   // Position 3
+   };
+   GLushort indices[] = {0, 1, 2, 0, 2, 3};
 
    // Set the viewport
-   glViewport ( 0, 0, esContext->width, esContext->height );
+   glViewport(0, 0, esContext->width, esContext->height);
 
    // Clear the color buffer
-   glClear ( GL_COLOR_BUFFER_BIT );
+   glClear(GL_COLOR_BUFFER_BIT);
 
    // Use the program object
-   glUseProgram ( userData->programObject );
+   glUseProgram(userData->programObject);
 
    // Load the vertex data
-   glVertexAttribPointer ( 0, 3, GL_FLOAT, GL_FALSE, 0, vVertices );
-   glEnableVertexAttribArray ( 0 );
+   // glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, vVertices);
+   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, vVertices);
+   glEnableVertexAttribArray(0);
 
-   glDrawArrays ( GL_TRIANGLES, 0, 3 );
+   // glDrawArrays(GL_TRIANGLES, 0, 3);
+   glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, indices);
 }
 
-void Shutdown ( ESContext *esContext )
+void Shutdown(ESContext *esContext)
 {
    UserData *userData = esContext->userData;
 
-   glDeleteProgram ( userData->programObject );
+   glDeleteProgram(userData->programObject);
 }
 
-int esMain ( ESContext *esContext )
+int esMain(ESContext *esContext)
 {
-   esContext->userData = malloc ( sizeof ( UserData ) );
+   esContext->userData = malloc(sizeof(UserData));
 
-   esCreateWindow ( esContext, "Hello Triangle", 320, 240, ES_WINDOW_RGB );
+   esCreateWindow(esContext, "Hello Triangle", 600, 600, ES_WINDOW_RGB);
 
-   if ( !Init ( esContext ) )
+   if (!Init(esContext))
    {
       return GL_FALSE;
    }
 
-   esRegisterShutdownFunc ( esContext, Shutdown );
-   esRegisterDrawFunc ( esContext, Draw );
+   esRegisterShutdownFunc(esContext, Shutdown);
+   esRegisterDrawFunc(esContext, Draw);
 
    return GL_TRUE;
 }
